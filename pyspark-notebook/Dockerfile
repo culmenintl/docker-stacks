@@ -21,14 +21,17 @@ RUN cd /tmp && \
         echo "5F4184E0FE7E5C8AE67F5E6BC5DEEE881051CC712E9FF8AEDDF3529724C00E402C94BB75561DD9517A372F06C1FCB78DC7AE65DCBD4C156B3BA4D8E267EC2936 *spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" | sha512sum -c - && \
         tar xzf spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz -C /usr/local --owner root --group root --no-same-owner && \
         rm spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz
-RUN cd /usr/local && ln -s spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION} spark
+RUN cd /usr/local && \
+    chown -R jovyan:users spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION} && \
+    ln -s spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION} spark
+
 
 # Mesos dependencies
 # Install from the Xenial Mesosphere repository since there does not (yet)
 # exist a Bionic repository and the dependencies seem to be compatible for now.
 COPY mesos.key /tmp/
 RUN apt-get -y update && \
-    apt-get install --no-install-recommends -y gnupg && \
+    apt-get install --no-install-recommends -y gnupg openssh-server && \
     apt-key add /tmp/mesos.key && \
     echo "deb http://repos.mesosphere.io/ubuntu xenial main" > /etc/apt/sources.list.d/mesosphere.list && \
     apt-get -y update && \
@@ -41,12 +44,26 @@ RUN apt-get -y update && \
 ENV SPARK_HOME /usr/local/spark
 ENV PYTHONPATH $SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.7-src.zip
 ENV MESOS_NATIVE_LIBRARY /usr/local/lib/libmesos.so
-ENV SPARK_OPTS --driver-java-options=-Xms1024M --driver-java-options=-Xmx4096M --driver-java-options=-Dlog4j.logLevel=info
+ENV SPARK_OPTS --driver-java-options=-Xms1024M --driver-java-options=-Xmx24576M --driver-java-options=-Dlog4j.logLevel=info
 
 USER $NB_UID
 
 # Install pyarrow
-RUN conda install --quiet -y 'pyarrow' && \
+RUN conda install --quiet -y 'pyarrow' gdal && \
     conda clean -tipsy && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
+
+RUN ssh-keygen -f ~/.ssh/id_rsa -q -N "" && \
+    cp ~/.ssh/id_rsa.pub ~/.ssh/authorized_keys
+
+USER root
+
+ENV PYSPARK_PYTHON /opt/conda/bin/python3
+ENV PYSPARK_DRIVER_PYTHON /opt/conda/bin/python3
+ENV SPARK_EXECUTOR_MEMORY 29g
+ENV SPARK_WORKER_MEMORY 29g
+RUN echo "$NB_UID ALL=(ALL:ALL) ALL" >> /etc/sudoers && \
+    echo "echo $USER && sudo /etc/init.d/ssh start && /usr/local/spark/sbin/start-all.sh && exec $SPARK_HOME/bin/spark-class org.apache.spark.deploy.master.Master" >> ~/start-spark.sh && \
+    echo "echo $USER && sudo /etc/init.d/ssh start && /usr/local/spark/sbin/start-all.sh && exec $SPARK_HOME/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077" >> ~/start-spark-worker.sh && \
+    chmod +x ~/start-spark.sh ~/start-spark-worker.sh
