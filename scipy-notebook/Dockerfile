@@ -10,7 +10,6 @@ USER root
 # ffmpeg for matplotlib anim
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg && \
-    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 USER $NB_UID
@@ -20,7 +19,7 @@ USER $NB_UID
 # use notebook-friendly backends in these images
 RUN conda install --quiet --yes \
     'conda-forge::blas=*=openblas' \
-    'ipywidgets=7.2*' \
+    'ipywidgets=7.4*' \
     'pandas=0.23*' \
     'numexpr=2.6*' \
     'matplotlib=2.2*' \
